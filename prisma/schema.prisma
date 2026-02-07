@@ -1,0 +1,76 @@
+// 1. Generator Client
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 2. Datasource
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- ENUMS ---
+enum Role {
+  ADMIN
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  BANNED
+  EXPIRED
+}
+
+enum MediaType {
+  VIDEO
+  PHOTO
+}
+
+// --- MODELS ---
+
+model User {
+  id        Int        @id @default(autoincrement())
+  username  String     @unique
+  password  String     
+  role      Role       @default(USER)
+  status    UserStatus @default(ACTIVE)
+  // Field 'plan' sudah dihapus
+  
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  albums    Album[]
+  createdAt DateTime @default(now())
+}
+
+model Album {
+  id           Int      @id @default(autoincrement())
+  title        String
+  description  String?  @db.Text
+  thumbnailUrl String   
+  label        String?  
+  rating       String?  
+  
+  categories   Category[]
+  mediaItems   MediaItem[]
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model MediaItem {
+  id           Int       @id @default(autoincrement())
+  name         String
+  type         MediaType 
+  url          String    
+  thumbnailUrl String?   
+  
+  albumId      Int
+  album        Album     @relation(fields: [albumId], references: [id], onDelete: Cascade) // <-- PASTIKAN ADA INI
+
+  createdAt    DateTime  @default(now())
+}
