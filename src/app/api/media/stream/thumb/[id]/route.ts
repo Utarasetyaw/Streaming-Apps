@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma'; // <--- PERBAIKAN: Gunakan Singleton
 import { createReadStream, statSync, existsSync } from 'fs';
 import path from 'path';
-
-const prisma = new PrismaClient();
 
 // Helper untuk deteksi tipe gambar otomatis (JPG/PNG/WEBP/GIF)
 function getMimeType(filePath: string): string {
@@ -66,7 +64,8 @@ export async function GET(
       headers: {
         'Content-Type': contentType, // Jangan dipaksa jpeg, sesuaikan file aslinya
         'Content-Length': stats.size.toString(),
-        'Cache-Control': 'public, max-age=31536000, immutable' // Cache setahun agar loading cepat
+        // Cache agresif (1 tahun) karena thumbnail jarang berubah
+        'Cache-Control': 'public, max-age=31536000, immutable' 
       }
     });
 

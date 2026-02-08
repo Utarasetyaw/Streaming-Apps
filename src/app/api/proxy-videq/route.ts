@@ -1,60 +1,98 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const query = searchParams.get('q');
+  const page = searchParams.get('page') || '1';
+
+  if (!query) {
+    return NextResponse.json({ error: 'Query is required' }, { status: 400 });
+  }
+
+  // Key Cache Unik untuk Search External
+  const cacheKey = `videq:q=${query}|page=${page}`;
+
   try {
-    // 1. Ambil parameter
-    const { searchParams } = new URL(request.url);
-    const query = searchParams.get('q');
-    const page = searchParams.get('page') || '1';
-
-    if (!query) {
-      return NextResponse.json({ error: 'Query is required' }, { status: 400 });
-    }
-
-    // 2. Setup URL & Controller untuk Timeout (Mencegah loading abadi)
+    // ---------------------------------------------------------
+    // A. COBA FETCH KE API EXTERNAL (VIDEQ)
+    // ---------------------------------------------------------
     const targetUrl = `https://zeldvorik.ru/videq/api.php?action=search&q=${encodeURIComponent(query)}&page=${page}`;
     
-    // Batas waktu tunggu 10 detik. Jika lebih, anggap Maintenance.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 Detik Timeout
 
-    try {
-      const response = await fetch(targetUrl, {
-        signal: controller.signal, // Pasang sinyal timeout
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-      });
-      
-      clearTimeout(timeoutId); // Hapus timer jika berhasil fetch
-
-      // Jika server sana merespon tapi error (500/404/503)
-      if (!response.ok) {
-        throw new Error(`External API Error: ${response.status}`);
+    const response = await fetch(targetUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
       }
+    });
+    
+    clearTimeout(timeoutId);
 
-      const data = await response.json();
-      
-      // Cek apakah data valid array/objek (terkadang API maintenance return HTML)
-      if (!data) throw new Error("Empty Data");
-
-      return NextResponse.json(data);
-
-    } catch (fetchError: any) {
-      // Tangkap Error Fetching (Timeout / Network Error)
-      console.error("Fetch Proxy Failed:", fetchError);
-      throw fetchError; // Lempar ke catch luar untuk return JSON standard
+    if (!response.ok) {
+      throw new Error(`External API error: ${response.status}`);
     }
 
+    const data = await response.json();
+
+    // ---------------------------------------------------------
+    // B. SUKSES: SIMPAN KE DATABASE (UPSERT)
+    // ---------------------------------------------------------
+    try {
+      // Kita bungkus data agar seragam
+      const cacheData = {
+        success: true,
+        data: data 
+      };
+
+      await (prisma as any).apiCache.upsert({
+        where: { key: cacheKey },
+        create: {
+          key: cacheKey,
+          data: cacheData
+        },
+        update: {
+          data: cacheData
+        }
+      });
+    } catch (dbError) {
+      console.error("[Proxy DB] Gagal simpan cache:", dbError);
+    }
+
+    return NextResponse.json({ success: true, data: data });
+
   } catch (error) {
-    console.error("Proxy Final Error:", error);
-    
-    // 3. RETURN RESPONSE ERROR KHUSUS
-    // Frontend akan membaca 'isError: true' dan memunculkan UI Maintenance
+    console.error("Proxy External Error, mencoba DB:", error);
+
+    // ---------------------------------------------------------
+    // C. GAGAL: AMBIL DARI DATABASE (FALLBACK)
+    // ---------------------------------------------------------
+    try {
+      const cached = await (prisma as any).apiCache.findUnique({
+        where: { key: cacheKey }
+      });
+
+      if (cached && cached.data) {
+        const jsonCache = cached.data as any;
+        return NextResponse.json({ 
+          success: true, 
+          data: jsonCache.data,
+          isCached: true 
+        });
+      }
+    } catch (dbReadError) {
+      console.error("[Proxy DB] Gagal baca DB:", dbReadError);
+    }
+
+    // ---------------------------------------------------------
+    // D. TOTAL FAILURE
+    // ---------------------------------------------------------
     return NextResponse.json({ 
       success: false, 
       isError: true, 
-      message: 'Server sedang sibuk atau gangguan.' 
+      message: 'Service Unavailable' 
     }, { status: 502 });
   }
 }

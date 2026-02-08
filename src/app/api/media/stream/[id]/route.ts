@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma'; // <--- PERBAIKAN: Gunakan import Singleton
 import { createReadStream, statSync, existsSync } from 'fs';
 import path from 'path';
 
-const prisma = new PrismaClient();
-
-// Fungsi helper untuk mendeteksi Mime Type berdasarkan ekstensi
+// Fungsi helper untuk mendeteksi Mime Type
 function getMimeType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   switch (ext) {
@@ -42,26 +40,25 @@ export async function GET(
       return NextResponse.json({ error: "Media tidak ditemukan" }, { status: 404 });
     }
 
-    // UPDATE PENTING:
-    // 1. Hapus slash depan
-    // 2. Gunakan decodeURIComponent agar karakter spasi (%20) terbaca sebagai spasi biasa
+    // UPDATE: Membersihkan URL path
     const rawUrl = media.url.startsWith('/') ? media.url.slice(1) : media.url;
+    
+    // Decode URI agar spasi (%20) terbaca sebagai spasi biasa di sistem file
     const relativeUrl = decodeURIComponent(rawUrl); 
     
+    // Gabungkan dengan path folder public
     const filePath = path.join(process.cwd(), 'public', relativeUrl);
 
     if (!existsSync(filePath)) {
-      console.error("File 404:", filePath); // Debugging di terminal server
-      return NextResponse.json({ error: "File fisik tidak ditemukan di server" }, { status: 404 });
+      // console.error("File 404:", filePath); // Uncomment untuk debug
+      return NextResponse.json({ error: "File fisik tidak ditemukan" }, { status: 404 });
     }
 
     const stats = statSync(filePath);
     const range = request.headers.get('range');
-    
-    // UPDATE PENTING: Deteksi tipe otomatis (PNG, JPG, MP4, dll)
     const contentType = getMimeType(filePath);
 
-    // --- LOGIKA STREAMING VIDEO (Range Request) ---
+    // --- LOGIKA STREAMING VIDEO (Support Range / Seeking) ---
     if (range && contentType.startsWith('video/')) {
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
@@ -82,13 +79,15 @@ export async function GET(
         'Accept-Ranges': 'bytes',
         'Content-Length': chunksize.toString(),
         'Content-Type': contentType,
+        // Penting agar browser memutar video (inline), bukan download
+        'Content-Disposition': 'inline', 
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
       };
 
       return new NextResponse(file as any, {
-        status: 206,
+        status: 206, // Partial Content
         headers: head,
       });
     } 
@@ -99,7 +98,8 @@ export async function GET(
         'Content-Length': stats.size.toString(),
         'Content-Type': contentType,
         'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public, max-age=31536000, immutable', // Cache gambar agar loading cepat
+        'Content-Disposition': 'inline', // Tampilkan di browser
+        'Cache-Control': 'public, max-age=31536000, immutable', // Cache agresif untuk gambar
       };
 
       const file = createReadStream(filePath);

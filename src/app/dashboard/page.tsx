@@ -96,12 +96,9 @@ export default function UserDashboard() {
 
     try {
       const res = await fetch(`/api/proxy-videq?q=${encodeURIComponent(searchQuery)}&page=${searchPage}`);
-      
-      if (!res.ok) throw new Error('API Error');
-      
       const result = await res.json();
 
-      if (result.error || result.isError) {
+      if (!res.ok || result.isError) {
          setIsError(true);
       } else if (result.success && Array.isArray(result.data)) {
         setExternalVideos(result.data);

@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { mkdir, unlink } from 'fs/promises';
 import { createWriteStream, existsSync } from 'fs';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import path from 'path';
-import sharp from 'sharp'; // Pastikan sudah npm install sharp
-
-const prisma = new PrismaClient();
+import sharp from 'sharp';
 
 export async function POST(request: Request) {
   try {
@@ -25,31 +23,27 @@ export async function POST(request: Request) {
       where: { id: Number(albumId) },
     });
 
-    if (!album) {
-      return NextResponse.json({ error: "Folder tidak ditemukan" }, { status: 404 });
+    if (!album || !album.thumbnailUrl) {
+      return NextResponse.json({ error: "Album/Folder tidak ditemukan" }, { status: 404 });
     }
 
-    // Gunakan nama folder asli (Izinkan spasi)
-    const folderName = album.title;
-    const uploadDir = path.join(process.cwd(), 'public/uploads', folderName);
+    const folderPathRelative = path.dirname(album.thumbnailUrl);
     
-    // Buat folder jika belum ada
+    const cleanRelative = folderPathRelative.startsWith('/') ? folderPathRelative.slice(1) : folderPathRelative;
+    const uploadDir = path.join(process.cwd(), 'public', cleanRelative);
+    
     await mkdir(uploadDir, { recursive: true });
 
-    // ==========================================
-    // LOGIKA VIDEO (MP4 -> MP4 LANGSUNG)
-    // ==========================================
     if (type === 'VIDEO') {
-      const fileName = `video_${Date.now()}.mp4`; // Selalu simpan sebagai .mp4
+      const fileName = `video_${Date.now()}.mp4`; 
       const finalFilePath = path.join(uploadDir, fileName);
-      const relativePath = `/uploads/${folderName}/${fileName}`;
+      const relativePath = `/${cleanRelative}/${fileName}`;
 
-      // PENTING: Gunakan Stream agar RAM tidak jebol saat upload 700MB
       const fileStream = file.stream();
+      
       // @ts-ignore
       await pipeline(Readable.fromWeb(fileStream), createWriteStream(finalFilePath));
 
-      // Simpan ke Database
       const newItem = await prisma.mediaItem.create({
         data: {
           name: name,
@@ -62,24 +56,18 @@ export async function POST(request: Request) {
       return NextResponse.json(newItem);
     } 
     
-    // ==========================================
-    // LOGIKA FOTO (PNG/JPG -> WEBP)
-    // ==========================================
     else {
-      const fileName = `photo_${Date.now()}.webp`; // Selalu simpan sebagai .webp
+      const fileName = `img_${Date.now()}.webp`;
       const finalFilePath = path.join(uploadDir, fileName);
-      const relativePath = `/uploads/${folderName}/${fileName}`;
+      const relativePath = `/${cleanRelative}/${fileName}`;
       
-      // Convert ke Buffer dulu
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       
-      // Proses Convert ke WebP menggunakan SHARP
       await sharp(buffer)
-        .webp({ quality: 80 }) // Kompresi kualitas 80%
+        .webp({ quality: 80 }) 
         .toFile(finalFilePath);
 
-      // Simpan ke Database
       const newItem = await prisma.mediaItem.create({
         data: {
           name: name,
@@ -112,8 +100,10 @@ export async function DELETE(request: Request) {
     if (!item) return NextResponse.json({ error: 'File tidak ditemukan' }, { status: 404 });
 
     try {
-      const relativePath = decodeURIComponent(item.url.startsWith('/') ? item.url.slice(1) : item.url);
-      const filePath = path.join(process.cwd(), 'public', relativePath);
+      const rawUrl = item.url.startsWith('/') ? item.url.slice(1) : item.url;
+      const decodedUrl = decodeURIComponent(rawUrl);
+      
+      const filePath = path.join(process.cwd(), 'public', decodedUrl);
       
       if (existsSync(filePath)) {
         await unlink(filePath);
@@ -126,6 +116,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ message: 'File berhasil dihapus' });
   } catch (error) {
+    console.error("Delete Error:", error);
     return NextResponse.json({ error: 'Gagal menghapus file' }, { status: 500 });
   }
 }

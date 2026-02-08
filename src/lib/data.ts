@@ -1,4 +1,9 @@
 import 'server-only'; 
+import { prisma } from '@/lib/prisma';
+
+// =========================================
+// TIPE DATA (TYPES)
+// =========================================
 
 export interface MovieItem {
   id: string;
@@ -17,7 +22,7 @@ export interface ApiResponse {
   items: MovieItem[];
   page: number;
   hasMore: boolean;
-  isError?: boolean; // Penanda jika API mati
+  isError?: boolean;
 }
 
 export interface Cast {
@@ -41,36 +46,86 @@ export interface MovieDetail {
   country: string;
 }
 
-export async function getMoviesSecurely(category: string, page: number, query?: string): Promise<ApiResponse> {
-  let url = '';
+// =========================================
+// 1. FETCH LIST MOVIE (DENGAN DB CACHE)
+// =========================================
 
-  if (query) {
-    url = `https://zeldvorik.ru/apiv3/api.php?action=search&q=${query}&page=${page}`;
+export async function getMoviesSecurely(category: string, page: number, query?: string): Promise<ApiResponse> {
+  const cleanCat = category ? category.trim() : '';
+  const cleanQ = query ? query.trim() : '';
+  const cacheKey = `cat:${cleanCat}|page:${page}|q:${cleanQ}`;
+
+  let url = '';
+  if (cleanQ) {
+    url = `https://zeldvorik.ru/apiv3/api.php?action=search&q=${cleanQ}&page=${page}`;
   } else {
-    const cleanCategory = category.trim();
-    url = `https://zeldvorik.ru/apiv3/api.php?action=${cleanCategory}&page=${page}`;
+    url = `https://zeldvorik.ru/apiv3/api.php?action=${cleanCat}&page=${page}`;
   }
 
   try {
+    // A. COBA FETCH API
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     const res = await fetch(url, { 
-      cache: 'no-store', 
+      cache: 'no-store',
+      signal: controller.signal
     });
     
+    clearTimeout(timeoutId);
+
     if (!res.ok) throw new Error(`API Error: ${res.status}`);
     
-    const data = await res.json();
+    const rawData = await res.json();
     
-    return {
-      success: data.success || false,
-      category: data.category || category,
-      items: Array.isArray(data.items) ? data.items : [], 
-      page: Number(data.page) || page,
-      hasMore: data.hasMore !== undefined ? data.hasMore : (data.items && data.items.length > 0),
+    const freshData: ApiResponse = {
+      success: rawData.success || false,
+      category: rawData.category || category,
+      items: Array.isArray(rawData.items) ? rawData.items : [], 
+      page: Number(rawData.page) || page,
+      hasMore: rawData.hasMore !== undefined ? rawData.hasMore : (rawData.items && rawData.items.length > 0),
       isError: false
     };
-  } catch (error) {
-    console.error("[SecureFetch] List Error:", error);
-    // Return object dengan isError: true
+
+    // B. SUKSES: SIMPAN KE DB
+    try {
+      await (prisma as any).apiCache.upsert({
+        where: { key: cacheKey },
+        create: {
+          key: cacheKey,
+          data: freshData as any
+        },
+        update: {
+          data: freshData as any
+        }
+      });
+    } catch (dbError) {
+      console.error("[DB Cache List] Gagal simpan (Non-fatal):", dbError);
+    }
+
+    return freshData;
+
+  } catch (externalError) {
+    console.error("[SecureFetch List] External API Gagal, mencoba DB:", externalError);
+
+    // C. GAGAL: AMBIL DARI DB
+    try {
+      const cached = await (prisma as any).apiCache.findUnique({
+        where: { key: cacheKey }
+      });
+
+      if (cached && cached.data) {
+        const cachedData = cached.data as unknown as ApiResponse;
+        return {
+          ...cachedData,
+          isError: false 
+        };
+      }
+    } catch (dbReadError) {
+      console.error("[DB Cache List] Gagal baca DB:", dbReadError);
+    }
+
+    // D. TOTAL FAILURE
     return { 
       success: false, 
       items: [], 
@@ -81,18 +136,69 @@ export async function getMoviesSecurely(category: string, page: number, query?: 
   }
 }
 
+// =========================================
+// 2. FETCH MOVIE DETAIL (DENGAN DB CACHE)
+// =========================================
+
 export async function getMovieDetailSecurely(slug: string): Promise<MovieDetail | null> {
+  const cacheKey = `detail:${slug}`;
+
   try {
+    // A. COBA FETCH API
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     const res = await fetch(`https://zeldvorik.ru/apiv3/api.php?action=detail&detailPath=${slug}`, {
       cache: 'no-store',
+      signal: controller.signal
     });
     
-    if (!res.ok) return null;
+    clearTimeout(timeoutId);
+
+    if (!res.ok) throw new Error(`API Error: ${res.status}`);
     
     const json = await res.json();
-    return json.success ? json.data : null;
-  } catch (error) {
-    console.error("[SecureFetch] Detail Error:", error);
+    
+    if (json.success && json.data) {
+      const freshData = json.data;
+
+      // B. SUKSES: SIMPAN KE DB
+      try {
+        await (prisma as any).apiCache.upsert({
+          where: { key: cacheKey },
+          create: {
+            key: cacheKey,
+            data: freshData
+          },
+          update: {
+            data: freshData
+          }
+        });
+      } catch (dbError) {
+        console.error("[DB Cache Detail] Gagal simpan:", dbError);
+      }
+
+      return freshData;
+    }
+    
+    return null;
+
+  } catch (externalError) {
+    console.error("[SecureFetch Detail] External API Gagal, mencoba DB:", externalError);
+
+    // C. GAGAL: AMBIL DARI DB
+    try {
+      const cached = await (prisma as any).apiCache.findUnique({
+        where: { key: cacheKey }
+      });
+
+      if (cached && cached.data) {
+        return cached.data as unknown as MovieDetail;
+      }
+    } catch (dbReadError) {
+      console.error("[DB Cache Detail] Gagal baca DB:", dbReadError);
+    }
+
     return null;
   }
 }

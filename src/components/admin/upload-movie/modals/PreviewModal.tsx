@@ -9,6 +9,10 @@ interface PreviewModalProps {
 export default function PreviewModal({ item, onClose }: PreviewModalProps) {
   if (!item) return null;
 
+  // Gunakan endpoint stream yang sudah kita buat untuk Video maupun Foto
+  // Ini memastikan file diload dengan benar meskipun namanya mengandung spasi/karakter unik
+  const streamUrl = `/api/media/stream/${item.id}`;
+
   return (
     // Background Gelap Penuh (Backdrop)
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-xl animate-in fade-in duration-300">
@@ -38,15 +42,15 @@ export default function PreviewModal({ item, onClose }: PreviewModalProps) {
           <video 
             controls 
             autoPlay 
-            className="max-w-full max-h-full w-auto h-auto rounded-lg shadow-2xl outline-none" 
-            key={item.id}
+            className="max-w-full max-h-full w-auto h-auto rounded-lg shadow-2xl outline-none border border-zinc-800" 
+            key={item.id} // Key penting agar react merender ulang saat ganti video
           >
-            <source src={`/api/media/stream/${item.id}`} type="video/mp4" />
+            <source src={streamUrl} type="video/mp4" />
             Browser Anda tidak mendukung pemutar video.
           </video>
         ) : (
           <img 
-            src={item.url} 
+            src={streamUrl} 
             alt={item.name} 
             className="max-w-full max-h-full w-auto h-auto object-contain rounded-lg shadow-2xl select-none" 
           />

@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { writeFile, mkdir, rm } from 'fs/promises';
 import path from 'path';
 
-const prisma = new PrismaClient();
+function sanitizeFolderName(title: string) {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_');
+}
 
-// --- GET (Mengambil Data Album) ---
 export async function GET() {
   try {
     const albums = await prisma.album.findMany({
@@ -18,19 +23,13 @@ export async function GET() {
       },
     });
 
-    // Manipulasi URL agar menggunakan jalur Stream API
     const safeAlbums = albums.map(album => ({
       ...album,
-      
-      // Arahkan thumbnail ke API Stream Thumb yang sudah kita perbaiki
-      thumbnailUrl: `/api/media/stream/thumb/${album.id}`, 
-      
+      thumbnailUrl: `/api/media/stream/thumb/${album.id}`,
       mediaItems: album.mediaItems.map(item => ({
         id: item.id,
         name: item.name,
         type: item.type,
-        // Kita tidak kirim URL asli agar aman & rapi
-        // Frontend cukup pakai ID untuk panggil: /api/media/stream/[id]
         createdAt: item.createdAt
       }))
     }));
@@ -41,16 +40,14 @@ export async function GET() {
   }
 }
 
-// --- POST (Membuat Album Baru) ---
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const title = formData.get('title') as string;
-    
     const categoryIdsString = formData.get('categoryIds') as string;
     const thumbnailFile = formData.get('thumbnail') as File;
 
-    if (!thumbnailFile || !categoryIdsString) {
+    if (!title || !thumbnailFile || !categoryIdsString) {
       return NextResponse.json({ error: "Data tidak lengkap" }, { status: 400 });
     }
 
@@ -61,20 +58,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Format kategori salah" }, { status: 400 });
     }
 
-    // UPDATE: Gunakan title asli (JANGAN di-lowercase/replace)
-    // Agar konsisten dengan route media
-    const folderName = title; 
+    const cleanTitle = sanitizeFolderName(title);
+    const uniqueSuffix = Date.now().toString().slice(-6);
+    const folderName = `${cleanTitle}_${uniqueSuffix}`;
+    
     const uploadDir = path.join(process.cwd(), 'public/uploads', folderName);
     
-    // Buat folder
     await mkdir(uploadDir, { recursive: true });
 
-    // Simpan Thumbnail (Metode Buffer Biasa - Cepat & Simple)
     const bytes = await thumbnailFile.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // Nama file asli saja (tanpa replaceAll)
-    const fileName = `thumbnail_${Date.now()}_${thumbnailFile.name}`;
+    const ext = path.extname(thumbnailFile.name) || '.jpg';
+    const fileName = `thumbnail${ext}`;
     const filePath = path.join(uploadDir, fileName);
     
     await writeFile(filePath, buffer);
@@ -96,12 +92,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json(newAlbum);
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Gagal upload folder' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal membuat album' }, { status: 500 });
   }
 }
 
-// --- DELETE (Hapus Album & Folder) ---
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -118,29 +112,27 @@ export async function DELETE(request: Request) {
     });
 
     if (!album) {
-      return NextResponse.json({ error: 'Folder tidak ditemukan' }, { status: 404 });
+      return NextResponse.json({ error: 'Album tidak ditemukan' }, { status: 404 });
     }
 
-    // UPDATE: Gunakan title asli untuk mencari folder yang mau dihapus
-    const folderName = album.title; 
-    const folderPath = path.join(process.cwd(), 'public/uploads', folderName);
+    const folderPathRelative = path.dirname(album.thumbnailUrl);
+    const cleanRelative = folderPathRelative.startsWith('/') ? folderPathRelative.slice(1) : folderPathRelative;
+    const fullFolderPath = path.join(process.cwd(), 'public', cleanRelative);
 
     try {
-      // Hapus folder beserta isinya secara paksa
-      await rm(folderPath, { recursive: true, force: true });
+      await rm(fullFolderPath, { recursive: true, force: true });
     } catch (error) {
-      console.error("Gagal hapus fisik folder (mungkin sudah hilang):", error);
+      console.error(error);
     }
 
-    // Hapus data di database
     await prisma.album.delete({
       where: {
         id: Number(id),
       },
     });
 
-    return NextResponse.json({ message: 'Folder berhasil dihapus' });
+    return NextResponse.json({ message: 'Album dan folder berhasil dihapus' });
   } catch (error) {
-    return NextResponse.json({ error: 'Gagal menghapus folder' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal menghapus album' }, { status: 500 });
   }
 }

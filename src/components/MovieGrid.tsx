@@ -1,8 +1,7 @@
 import JWCard from '@/components/JWCard';
 import Pagination from '@/components/Pagination';
 import { getMoviesSecurely } from '@/lib/data';
-import { ExclamationTriangleIcon, SignalSlashIcon } from '@heroicons/react/24/solid';
-
+import { ExclamationTriangleIcon, SignalSlashIcon } from '@heroicons/react/24/outline';
 interface MovieGridProps {
   category: string;
   page: number;
