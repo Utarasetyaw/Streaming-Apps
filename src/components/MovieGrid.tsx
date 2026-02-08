@@ -1,6 +1,7 @@
 import JWCard from '@/components/JWCard';
 import Pagination from '@/components/Pagination';
-import { getMoviesSecurely } from '@/lib/data'; // Import dari file yang kita buat di langkah 1
+import { getMoviesSecurely } from '@/lib/data';
+import { ExclamationTriangleIcon, SignalSlashIcon } from '@heroicons/react/24/solid';
 
 interface MovieGridProps {
   category: string;
@@ -9,19 +10,39 @@ interface MovieGridProps {
 }
 
 export default async function MovieGrid({ category, page, query }: MovieGridProps) {
-  // Panggil API di server (Aman & Tersembunyi)
   const data = await getMoviesSecurely(category, page, query);
 
-  // Jika data kosong
-  if (data.items.length === 0) {
+  // 1. CEK ERROR DULU (Jika API Mati/Maintenance)
+  if (data.isError) {
     return (
-      <div className="flex flex-col items-center justify-center h-80 text-zinc-500 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/20">
-        <p className="text-lg md:text-xl font-medium text-zinc-400">Data tidak ditemukan</p>
-        <p className="text-xs md:text-sm mt-2">Coba refresh atau pilih kategori lain.</p>
+      <div className="flex flex-col items-center justify-center min-h-[50vh] text-center px-4 animate-fade-in border border-dashed border-red-900/50 rounded-xl bg-red-900/10 py-10">
+         <SignalSlashIcon className="w-16 h-16 text-red-500 mb-4" />
+         <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Layanan Sedang Gangguan</h2>
+         <p className="text-zinc-400 text-sm md:text-base max-w-md mb-6">
+            Maaf, kami sedang mengalami kendala koneksi ke server pusat. Mohon coba muat ulang halaman beberapa saat lagi.
+         </p>
+         <a 
+           href={`/?category=${category}&page=${page}`}
+           className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition text-sm flex items-center gap-2"
+         >
+           Coba Muat Ulang
+         </a>
       </div>
     );
   }
 
+  // 2. CEK DATA KOSONG (Jika API Hidup tapi tidak ada hasil)
+  if (data.items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-80 text-zinc-500 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/20">
+        <ExclamationTriangleIcon className="w-12 h-12 mb-4 text-zinc-600" />
+        <p className="text-lg md:text-xl font-medium text-zinc-400">Data tidak ditemukan</p>
+        <p className="text-xs md:text-sm mt-2">Coba kata kunci lain atau pilih kategori berbeda.</p>
+      </div>
+    );
+  }
+
+  // 3. TAMPILAN NORMAL
   return (
     <div className="animate-fade-in">
       {/* Grid Film */}

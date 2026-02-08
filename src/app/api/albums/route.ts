@@ -5,7 +5,7 @@ import path from 'path';
 
 const prisma = new PrismaClient();
 
-// --- UPDATE DI SINI (GET) ---
+// --- GET (Mengambil Data Album) ---
 export async function GET() {
   try {
     const albums = await prisma.album.findMany({
@@ -18,22 +18,19 @@ export async function GET() {
       },
     });
 
-    // --- SECURITY FILTER ---
-    // Kita buat array baru (safeAlbums) yang strukturnya dimanipulasi
+    // Manipulasi URL agar menggunakan jalur Stream API
     const safeAlbums = albums.map(album => ({
       ...album,
       
-      // 1. Sembunyikan Path Thumbnail Asli
-      // Ubah jadi URL stream proxy (pastikan Anda sudah buat route stream thumb di step sebelumnya)
+      // Arahkan thumbnail ke API Stream Thumb yang sudah kita perbaiki
       thumbnailUrl: `/api/media/stream/thumb/${album.id}`, 
       
-      // 2. Sembunyikan Path Media Asli
       mediaItems: album.mediaItems.map(item => ({
         id: item.id,
         name: item.name,
         type: item.type,
-        // url: item.url,  <-- FIELD INI DIHAPUS/TIDAK DIKIRIM
-        // Kita hanya kirim ID. Frontend akan akses via /api/media/stream/[id]
+        // Kita tidak kirim URL asli agar aman & rapi
+        // Frontend cukup pakai ID untuk panggil: /api/media/stream/[id]
         createdAt: item.createdAt
       }))
     }));
@@ -44,7 +41,7 @@ export async function GET() {
   }
 }
 
-// --- POST (Biarkan Tetap Sama / Standar) ---
+// --- POST (Membuat Album Baru) ---
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -64,15 +61,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Format kategori salah" }, { status: 400 });
     }
 
-    const folderName = title.toLowerCase().replaceAll(' ', '_');
+    // UPDATE: Gunakan title asli (JANGAN di-lowercase/replace)
+    // Agar konsisten dengan route media
+    const folderName = title; 
     const uploadDir = path.join(process.cwd(), 'public/uploads', folderName);
+    
+    // Buat folder
     await mkdir(uploadDir, { recursive: true });
 
+    // Simpan Thumbnail (Metode Buffer Biasa - Cepat & Simple)
     const bytes = await thumbnailFile.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    const fileName = `thumbnail_${Date.now()}_${thumbnailFile.name.replaceAll(' ', '_')}`;
+    // Nama file asli saja (tanpa replaceAll)
+    const fileName = `thumbnail_${Date.now()}_${thumbnailFile.name}`;
     const filePath = path.join(uploadDir, fileName);
+    
     await writeFile(filePath, buffer);
 
     const relativePath = `/uploads/${folderName}/${fileName}`;
@@ -97,7 +101,7 @@ export async function POST(request: Request) {
   }
 }
 
-// --- DELETE (Biarkan Tetap Sama) ---
+// --- DELETE (Hapus Album & Folder) ---
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -117,15 +121,18 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Folder tidak ditemukan' }, { status: 404 });
     }
 
-    const folderName = album.title.toLowerCase().replaceAll(' ', '_');
+    // UPDATE: Gunakan title asli untuk mencari folder yang mau dihapus
+    const folderName = album.title; 
     const folderPath = path.join(process.cwd(), 'public/uploads', folderName);
 
     try {
+      // Hapus folder beserta isinya secara paksa
       await rm(folderPath, { recursive: true, force: true });
     } catch (error) {
-      console.error(error);
+      console.error("Gagal hapus fisik folder (mungkin sudah hilang):", error);
     }
 
+    // Hapus data di database
     await prisma.album.delete({
       where: {
         id: Number(id),

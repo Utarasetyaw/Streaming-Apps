@@ -11,10 +11,10 @@ import {
   PlayCircleIcon,
   ChevronDownIcon,
   FunnelIcon,
-  ArrowRightOnRectangleIcon
+  ArrowRightOnRectangleIcon,
+  SignalSlashIcon
 } from '@heroicons/react/24/outline';
 
-// --- TYPE DEFINITIONS ---
 interface Album {
   id: number;
   title: string;
@@ -36,26 +36,22 @@ interface ExternalVideo {
 export default function UserDashboard() {
   const router = useRouter();
   
-  // --- STATE MANAGEMENT ---
   const [activeTab, setActiveTab] = useState<'LOCAL' | 'EXTERNAL'>('LOCAL');
   const [isLoading, setIsLoading] = useState(true);
   
-  // State Local (Internal Collection)
   const [albums, setAlbums] = useState<Album[]>([]);
   const [categories, setCategories] = useState<string[]>(['All']);
   const [selectedCategory, setSelectedCategory] = useState('All');
   
-  // State Dropdown
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // State External (Videq Search)
   const [searchQuery, setSearchQuery] = useState('');
   const [externalVideos, setExternalVideos] = useState<ExternalVideo[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchPage, setSearchPage] = useState(1);
+  const [isError, setIsError] = useState(false);
 
-  // --- INITIAL LOAD ---
   useEffect(() => {
     const authStatus = localStorage.getItem('is_logged_in');
     if (authStatus !== 'true') {
@@ -72,7 +68,7 @@ export default function UserDashboard() {
         const uniqueCats = Array.from(new Set(allCats));
         setCategories(['All', ...uniqueCats]);
       } catch (error) {
-        console.error("Gagal memuat data lokal:", error);
+        console.error(error);
       } finally {
         setIsLoading(false);
       }
@@ -90,27 +86,30 @@ export default function UserDashboard() {
 
   }, [router]);
 
-  // --- EXTERNAL SEARCH FUNCTION (UPDATED: VIA PROXY) ---
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!searchQuery.trim()) return;
 
     setIsSearching(true);
+    setIsError(false);
+    setExternalVideos([]);
+
     try {
-      // PERUBAHAN DI SINI:
-      // Kita panggil API internal '/api/proxy-videq'
-      // Browser tidak akan melihat URL 'zeldvorik.ru'
       const res = await fetch(`/api/proxy-videq?q=${encodeURIComponent(searchQuery)}&page=${searchPage}`);
+      
+      if (!res.ok) throw new Error('API Error');
+      
       const result = await res.json();
 
-      if (result.success && Array.isArray(result.data)) {
+      if (result.error || result.isError) {
+         setIsError(true);
+      } else if (result.success && Array.isArray(result.data)) {
         setExternalVideos(result.data);
       } else {
         setExternalVideos([]);
       }
     } catch (error) {
-      console.error("Search Error:", error);
-      alert("Gagal mencari video. Coba lagi nanti.");
+      setIsError(true);
     } finally {
       setIsSearching(false);
     }
@@ -136,11 +135,10 @@ export default function UserDashboard() {
   return (
     <div className="min-h-screen bg-[#060606] text-white font-sans selection:bg-red-600 selection:text-white">
       
-      {/* 1. HEADER / NAVBAR */}
       <header className="fixed top-0 w-full z-50 bg-black/90 backdrop-blur-md border-b border-zinc-800">
         <div className="container mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="text-2xl font-bold text-red-600 tracking-tighter uppercase cursor-default">
-            Fineshyt<span className="text-white">User</span>
+            Streaming<span className="text-white">Member</span>
           </div>
 
           <button 
@@ -153,10 +151,8 @@ export default function UserDashboard() {
         </div>
       </header>
 
-      {/* 2. MAIN CONTENT */}
       <main className="container mx-auto px-4 sm:px-6 pt-32 pb-20">
         
-        {/* TABS SWITCHER */}
         <div className="flex justify-center mb-10">
           <div className="bg-zinc-900 p-1 rounded-full border border-zinc-800 inline-flex shadow-xl">
             <button 
@@ -175,18 +171,15 @@ export default function UserDashboard() {
           </div>
         </div>
 
-        {/* === CONTENT: INTERNAL COLLECTION === */}
         {activeTab === 'LOCAL' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
              
-             {/* Header Section */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 border-b border-zinc-800 pb-8">
               <div>
                 <h1 className="text-3xl font-bold mb-2">Folder Koleksi</h1>
                 <p className="text-zinc-500 text-sm">Konten premium eksklusif untuk member.</p>
               </div>
 
-              {/* DROPDOWN FILTER KATEGORI */}
               <div className="relative w-full md:w-auto" ref={dropdownRef}>
                 <label className="text-[10px] uppercase font-bold text-zinc-500 mb-1 block tracking-wider">Filter Kategori</label>
                 <button
@@ -228,7 +221,6 @@ export default function UserDashboard() {
               </div>
             </div>
 
-            {/* Grid Folders */}
             {filteredCollections.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5 gap-y-8">
                 {filteredCollections.map((folder) => (
@@ -266,11 +258,9 @@ export default function UserDashboard() {
           </div>
         )}
 
-        {/* === CONTENT: EXTERNAL SEARCH (VIDEQ) === */}
         {activeTab === 'EXTERNAL' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             
-            {/* Search Bar */}
             <div className="max-w-2xl mx-auto mb-12">
                <div className="text-center mb-6">
                  <h1 className="text-3xl font-bold mb-2">Cari Video Global</h1>
@@ -299,8 +289,21 @@ export default function UserDashboard() {
                </form>
             </div>
 
-            {/* External Results Grid */}
-            {externalVideos.length > 0 ? (
+            {isError ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center animate-fade-in border border-dashed border-red-900/50 rounded-xl bg-red-900/10 mb-8">
+                <SignalSlashIcon className="w-16 h-16 text-red-500 mb-4" />
+                <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Server Videq Gangguan</h2>
+                <p className="text-zinc-400 text-sm md:text-base max-w-md mb-6">
+                    Koneksi ke server pihak ketiga sedang bermasalah atau sibuk. Silakan coba cari kata kunci lain atau kembali lagi nanti.
+                </p>
+                <button 
+                  onClick={(e) => handleSearch(e)}
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition text-sm"
+                >
+                  Coba Lagi
+                </button>
+              </div>
+            ) : externalVideos.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                 {externalVideos.map((video, index) => (
                   <a 
@@ -347,7 +350,7 @@ export default function UserDashboard() {
               )
             )}
             
-            {!isSearching && externalVideos.length === 0 && !searchQuery && (
+            {!isSearching && !isError && externalVideos.length === 0 && !searchQuery && (
                <div className="text-center py-20 opacity-30">
                   <GlobeAltIcon className="w-20 h-20 mx-auto mb-4 text-zinc-600" />
                   <p className="text-zinc-500">Mulai cari video dengan mengetik di kolom pencarian.</p>
