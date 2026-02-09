@@ -128,11 +128,11 @@ export default function AlbumPage() {
         </div>
       </header>
 
-      {/* COMPACT INFO SECTION (PENGGANTI BANNER BESAR) */}
+      {/* COMPACT INFO SECTION */}
       <div className="pt-24 pb-8 px-4 md:px-8 border-b border-zinc-800 bg-zinc-900/20">
         <div className="container mx-auto flex flex-col md:flex-row items-start md:items-end gap-6">
            
-           {/* Thumbnail Kecil (Cover Album) */}
+           {/* Thumbnail Kecil */}
            <div className="w-32 h-44 md:w-40 md:h-56 flex-shrink-0 rounded-xl overflow-hidden border border-zinc-700 shadow-2xl bg-zinc-800">
               <img src={album.thumbnailUrl} className="w-full h-full object-cover" alt="Cover" />
            </div>
@@ -199,13 +199,13 @@ export default function AlbumPage() {
       {playingMedia && (
         <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center animate-in fade-in duration-300">
           
-          {/* FLOATING HEADER (Overlay) */}
+          {/* FLOATING HEADER */}
           <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-start z-[60] bg-gradient-to-b from-black/90 to-transparent pointer-events-none">
              <div className="pointer-events-auto">
-               <h2 className="text-xl md:text-2xl font-bold text-white drop-shadow-lg">{playingMedia.name}</h2>
+               <h2 className="text-xl md:text-2xl font-bold text-white drop-shadow-lg max-w-[70vw] truncate">{playingMedia.name}</h2>
                <div className="flex items-center gap-2 mt-1 opacity-70">
                  <ShieldCheckIcon className="w-4 h-4 text-green-400" />
-                 <span className="text-xs text-zinc-300 font-mono tracking-wider">SECURE PLAY • {username}</span>
+                 <span className="text-xs text-zinc-300 font-mono tracking-wider">fineshythouse.online</span>
                </div>
              </div>
              
@@ -220,16 +220,27 @@ export default function AlbumPage() {
           {/* MAIN CONTENT AREA */}
           <div className="w-full h-full flex items-center justify-center relative overflow-hidden">
             
-            {/* 🔒 WATERMARK */}
-            <div className="absolute inset-0 z-[55] pointer-events-none overflow-hidden opacity-[0.03] select-none flex flex-wrap content-center justify-center gap-20">
-               {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="text-white text-4xl font-black uppercase -rotate-12 whitespace-nowrap">
-                     {username} • {new Date().toLocaleDateString()}
+            {/* 🔒 WATERMARK RESPONSIVE 
+              - fineshythouse.online
+              - Responsive Grid & Font Size
+            */}
+            <div className="absolute inset-0 z-[55] pointer-events-none overflow-hidden select-none grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 content-between justify-items-center gap-y-12 gap-x-4 p-8 opacity-20">
+               {/* Generate 20 items agar layar penuh */}
+               {Array.from({ length: 20 }).map((_, i) => (
+                  <div key={i} className="flex flex-col items-center justify-center transform -rotate-12">
+                     {/* DOMAIN UTAMA (Besar) */}
+                     <span className="text-white text-xs sm:text-base md:text-xl lg:text-2xl font-black uppercase whitespace-nowrap drop-shadow-md">
+                        fineshythouse.online
+                     </span>
+                     {/* USERNAME (Kecil di bawahnya) */}
+                     <span className="text-zinc-400 text-[10px] sm:text-xs md:text-sm font-mono mt-1">
+                        User: {username}
+                     </span>
                   </div>
                ))}
             </div>
 
-            {/* 🔒 TRANSPARENT SHIELD */}
+            {/* 🔒 TRANSPARENT SHIELD (Prevent Right Click on Video) */}
             <div className="absolute inset-0 z-[50]" onContextMenu={(e) => e.preventDefault()}></div>
 
             {playingMedia.type === 'VIDEO' ? (

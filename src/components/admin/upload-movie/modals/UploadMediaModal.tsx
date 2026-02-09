@@ -1,51 +1,61 @@
 // src/components/admin/upload-movie/modals/UploadMediaModal.tsx
 import { useState, useEffect } from 'react';
-import { XMarkIcon, VideoCameraIcon, PhotoIcon, CloudArrowUpIcon, DocumentIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, VideoCameraIcon, PhotoIcon, CloudArrowUpIcon, DocumentIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 interface UploadMediaModalProps {
   isOpen: boolean;
   isSaving: boolean;
+  
+  // Props baru untuk status multi-upload
+  currentFileIndex: number;
+  totalFilesToUpload: number;
   uploadProgress: number;
+  
   processingStatus: string;
   onClose: () => void;
-  onSubmit: (name: string, type: 'VIDEO' | 'PHOTO', file: File) => void;
+  // Submit sekarang mengirim Array File
+  onSubmit: (type: 'VIDEO' | 'PHOTO', files: File[]) => void;
 }
 
-export default function UploadMediaModal({ isOpen, isSaving, uploadProgress, processingStatus, onClose, onSubmit }: UploadMediaModalProps) {
-  const [name, setName] = useState('');
+export default function UploadMediaModal({ 
+  isOpen, 
+  isSaving, 
+  uploadProgress, 
+  currentFileIndex, 
+  totalFilesToUpload,
+  processingStatus, 
+  onClose, 
+  onSubmit 
+}: UploadMediaModalProps) {
+  
   const [type, setType] = useState<'VIDEO' | 'PHOTO'>('VIDEO');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
 
   // Reset form setiap kali modal dibuka
   useEffect(() => {
-    if (isOpen) {
-      setName('');
-      setFile(null);
-      // Default type tetap VIDEO atau bisa direset jika mau
+    if (isOpen && !isSaving) {
+      setFiles([]);
     }
-  }, [isOpen]);
+  }, [isOpen, isSaving]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      setFile(selectedFile);
-      
-      // Auto-fill nama file jika input nama masih kosong
-      if (!name) {
-        // Hapus ekstensi file (contoh: "movie.mp4" -> "movie")
-        const nameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, "");
-        setName(nameWithoutExt);
-      }
+    if (e.target.files && e.target.files.length > 0) {
+      // Gabungkan file baru dengan file yg sudah ada (bisa nambah terus)
+      const newFiles = Array.from(e.target.files);
+      setFiles(prev => [...prev, ...newFiles]);
     }
+  };
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
-    onSubmit(name, type, file);
+    if (files.length === 0) return;
+    onSubmit(type, files);
   };
 
-  // Helper untuk format ukuran file (KB, MB, GB)
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -58,12 +68,16 @@ export default function UploadMediaModal({ isOpen, isSaving, uploadProgress, pro
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => !isSaving && onClose()} />
-      <div className="relative bg-zinc-900 w-full max-w-md rounded-2xl border border-zinc-800 p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+      
+      <div className="relative bg-zinc-900 w-full max-w-lg rounded-2xl border border-zinc-800 p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
         
         {/* Header */}
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-white">Upload Media</h3>
+        <div className="flex justify-between items-center mb-6 shrink-0">
+          <h3 className="text-xl font-bold text-white">
+            {isSaving ? 'Sedang Mengupload...' : 'Upload Media (Multi-File)'}
+          </h3>
           <button 
             onClick={() => !isSaving && onClose()} 
             className={`text-zinc-500 hover:text-white ${isSaving ? 'opacity-30 cursor-not-allowed' : ''}`} 
@@ -75,8 +89,8 @@ export default function UploadMediaModal({ isOpen, isSaving, uploadProgress, pro
 
         {/* Content */}
         {isSaving ? (
-          // TAMPILAN SAAT UPLOAD/PROCESSING
-          <div className="py-8 text-center space-y-6">
+          // --- TAMPILAN SAAT PROSES UPLOAD BERJALAN ---
+          <div className="py-8 text-center space-y-6 flex-1 flex flex-col justify-center">
             <div className="relative w-24 h-24 mx-auto">
               {processingStatus === 'compressing' ? (
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -91,34 +105,34 @@ export default function UploadMediaModal({ isOpen, isSaving, uploadProgress, pro
             
             <div className="space-y-2">
               <h4 className="text-lg font-bold text-white">
-                {processingStatus === 'compressing' 
-                  ? 'Memproses File...' 
-                  : `Mengupload... ${uploadProgress}%`}
+                File {currentFileIndex} dari {totalFilesToUpload}
               </h4>
-              <p className="text-zinc-500 text-sm px-4">
-                {processingStatus === 'compressing' 
-                  ? 'Sedang menyimpan file ke server. Jangan tutup halaman.' 
-                  : 'Mohon tunggu, kecepatan tergantung koneksi internet Anda.'}
+              <p className="text-zinc-400 font-mono text-sm">
+                 {processingStatus === 'compressing' ? 'Memproses di Server...' : `Uploading: ${uploadProgress}%`}
               </p>
               
-              {/* Progress Bar */}
-              {processingStatus === 'uploading' && (
-                <div className="w-full bg-zinc-800 rounded-full h-3 mt-4 overflow-hidden border border-zinc-700">
-                  <div 
-                    className="bg-red-600 h-full rounded-full transition-all duration-300 ease-out flex items-center justify-end pr-1" 
+              {/* Progress Bar Single File */}
+              <div className="w-full bg-zinc-800 rounded-full h-4 mt-4 overflow-hidden border border-zinc-700 relative">
+                 <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold z-10 text-white drop-shadow-md">
+                    {uploadProgress}%
+                 </div>
+                 <div 
+                    className="bg-red-600 h-full rounded-full transition-all duration-300 ease-out" 
                     style={{ width: `${uploadProgress}%` }}
-                  >
-                  </div>
-                </div>
-              )}
+                  ></div>
+              </div>
+
+              <p className="text-zinc-500 text-xs mt-4">
+                Mohon jangan tutup halaman ini sampai semua file selesai.
+              </p>
             </div>
           </div>
         ) : (
-          // TAMPILAN FORM INPUT
-          <form onSubmit={handleSubmit} className="space-y-5">
+          // --- TAMPILAN FORM INPUT ---
+          <form onSubmit={handleSubmit} className="space-y-5 flex flex-col flex-1 min-h-0">
             
             {/* Type Selector */}
-            <div>
+            <div className="shrink-0">
               <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-wider">Tipe File</label>
               <div className="grid grid-cols-2 gap-3">
                 <button 
@@ -138,64 +152,71 @@ export default function UploadMediaModal({ isOpen, isSaving, uploadProgress, pro
               </div>
             </div>
 
-            {/* File Input (Area Besar) */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase text-center tracking-wider">Pilih File</label>
-              <div 
-                className={`relative h-36 bg-black border-2 border-dashed rounded-2xl flex flex-col items-center justify-center p-4 cursor-pointer transition-all group ${file ? 'border-red-600 bg-red-600/5' : 'border-zinc-800 hover:border-zinc-600 hover:bg-zinc-900/50'}`} 
-                onClick={() => document.getElementById('mediaInput')?.click()}
-              >
-                {file ? (
-                  <div className="text-center animate-in zoom-in-50 duration-200">
-                    <DocumentIcon className="w-10 h-10 text-red-500 mx-auto mb-2" />
-                    <p className="text-white font-bold text-sm truncate max-w-[250px]">{file.name}</p>
-                    <p className="text-zinc-500 text-xs mt-1 bg-zinc-900/80 px-2 py-0.5 rounded-full inline-block">{formatFileSize(file.size)}</p>
-                  </div>
-                ) : (
-                  <div className="text-center group-hover:scale-105 transition duration-300">
-                    <CloudArrowUpIcon className="w-10 h-10 text-zinc-700 mx-auto mb-2 group-hover:text-zinc-500" />
-                    <p className="text-zinc-500 font-bold text-xs uppercase group-hover:text-zinc-400">Klik untuk cari file</p>
-                    <p className="text-zinc-700 text-[10px] mt-1">{type === 'VIDEO' ? 'MP4, MKV, WebM' : 'JPG, PNG, WebP'}</p>
-                  </div>
-                )}
-                <input 
-                  id="mediaInput" 
-                  type="file" 
-                  accept={type === 'VIDEO' ? "video/*" : "image/*"} 
-                  className="hidden" 
-                  onChange={handleFileChange} 
-                />
-              </div>
-            </div>
-            
-            {/* Title Input */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-wider">Judul File</label>
-              <input 
-                type="text" 
-                className="w-full px-4 py-3 bg-black border border-zinc-800 rounded-xl text-white focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition placeholder-zinc-700" 
-                placeholder={type === 'VIDEO' ? "Contoh: Episode 1" : "Contoh: Poster Alternatif"} 
-                required 
-                value={name} 
-                onChange={(e) => setName(e.target.value)} 
-              />
+            {/* File Input Area */}
+            <div className="shrink-0">
+               <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-wider text-center">Pilih File (Bisa Banyak)</label>
+               <div 
+                  className="relative h-28 bg-black border-2 border-dashed border-zinc-800 hover:border-zinc-600 rounded-2xl flex flex-col items-center justify-center p-4 cursor-pointer transition-all hover:bg-zinc-900/50" 
+                  onClick={() => document.getElementById('mediaInput')?.click()}
+               >
+                  <CloudArrowUpIcon className="w-8 h-8 text-zinc-600 mb-2" />
+                  <p className="text-zinc-500 font-bold text-xs uppercase">Klik untuk tambah file</p>
+                  <input 
+                    id="mediaInput" 
+                    type="file" 
+                    multiple // <--- KUNCI MULTI UPLOAD
+                    accept={type === 'VIDEO' ? "video/*" : "image/*"} 
+                    className="hidden" 
+                    onChange={handleFileChange} 
+                  />
+               </div>
             </div>
 
-            {/* Buttons */}
-            <div className="flex gap-3 pt-2">
+            {/* File List (Scrollable) */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/50 rounded-xl border border-zinc-800 p-2 min-h-[150px]">
+               {files.length === 0 ? (
+                 <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+                   Belum ada file dipilih
+                 </div>
+               ) : (
+                 <div className="space-y-2">
+                   {files.map((f, i) => (
+                     <div key={i} className="flex items-center gap-3 bg-zinc-900 p-3 rounded-lg border border-zinc-800 animate-in fade-in slide-in-from-bottom-2">
+                        <div className="p-2 bg-black rounded-md text-zinc-400">
+                          {type === 'VIDEO' ? <VideoCameraIcon className="w-5 h-5"/> : <PhotoIcon className="w-5 h-5"/>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm font-medium truncate">{f.name}</p>
+                          <p className="text-zinc-500 text-xs">{formatFileSize(f.size)}</p>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          className="p-1.5 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-md transition"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                     </div>
+                   ))}
+                 </div>
+               )}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex gap-3 shrink-0 pt-2">
               <button 
                 type="button" 
                 onClick={onClose} 
-                className="flex-1 py-3.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-bold transition active:scale-95"
+                className="flex-1 py-3.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-bold transition"
               >
                 Batal
               </button>
               <button 
                 type="submit" 
-                disabled={!file}
-                className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-900/20 transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={files.length === 0}
+                className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-900/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Upload
+                Upload {files.length > 0 ? `(${files.length} File)` : ''}
               </button>
             </div>
           </form>

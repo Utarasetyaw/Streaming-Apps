@@ -162,7 +162,6 @@ export default function UserDashboard() {
               onClick={() => setActiveTab('EXTERNAL')}
               className={`px-6 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'EXTERNAL' ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' : 'text-zinc-500 hover:text-white'}`}
             >
-              <GlobeAltIcon className="w-4 h-4" />
               Nonton di Videq
             </button>
           </div>

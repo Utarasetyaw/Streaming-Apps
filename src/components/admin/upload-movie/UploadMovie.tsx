@@ -21,16 +21,18 @@ export default function UploadMovie() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<Album | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Upload State
   const [isSaving, setIsSaving] = useState(false);
-
-  // Modal State
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null);
   
-  // Progress State
+  // Progress State (Multi Upload Support)
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingStatus, setProcessingStatus] = useState('');
+  const [currentFileIndex, setCurrentFileIndex] = useState(0);
+  const [totalFilesToUpload, setTotalFilesToUpload] = useState(0);
 
   // Notification State
   const [alertConfig, setAlertConfig] = useState<{ isOpen: boolean, title: string, message: string, type: 'success' | 'error' }>({ isOpen: false, title: '', message: '', type: 'success' });
@@ -87,52 +89,69 @@ export default function UploadMovie() {
     } finally { setIsSaving(false); }
   };
 
-  const handleUploadMedia = async (name: string, type: 'VIDEO' | 'PHOTO', file: File) => {
-    if (!selectedFolder) return;
+  // --- REVISI: LOGIC MULTI UPLOAD SEQUENTIAL ---
+  const handleUploadMedia = async (type: 'VIDEO' | 'PHOTO', files: File[]) => {
+    if (!selectedFolder || files.length === 0) return;
+
     setIsSaving(true);
-    setUploadProgress(0);
-    setProcessingStatus('uploading');
+    setTotalFilesToUpload(files.length);
+    setCurrentFileIndex(0);
 
-    try {
-      const fileToUpload = type === 'PHOTO' ? await compressImage(file) : file;
-      const formData = new FormData();
-      formData.append('name', name);
-      formData.append('type', type);
-      formData.append('albumId', selectedFolder.id.toString());
-      formData.append('file', fileToUpload);
+    // Loop upload satu per satu (Sequential)
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setCurrentFileIndex(i + 1); 
+        setUploadProgress(0);
+        setProcessingStatus('uploading');
 
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/media');
-      
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 100);
-          setUploadProgress(percent);
-          if (percent === 100) setProcessingStatus('compressing');
+        try {
+            // Gunakan nama file asli (tanpa ekstensi) sebagai judul
+            const name = file.name.replace(/\.[^/.]+$/, "");
+            
+            const fileToUpload = type === 'PHOTO' ? await compressImage(file) : file;
+            
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('type', type);
+            formData.append('albumId', selectedFolder.id.toString());
+            formData.append('file', fileToUpload);
+
+            await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/media');
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        setUploadProgress(percent);
+                        if (percent === 100) setProcessingStatus('compressing');
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        const newItem = JSON.parse(xhr.responseText);
+                        setSelectedFolder(prev => prev ? ({ ...prev, mediaItems: [...prev.mediaItems, newItem] }) : null);
+                        resolve(newItem);
+                    } else {
+                        reject(xhr.responseText);
+                    }
+                };
+
+                xhr.onerror = () => reject(xhr.statusText);
+                xhr.send(formData);
+            });
+
+        } catch (error) {
+            console.error(`Gagal upload file ke-${i + 1}:`, error);
         }
-      };
-
-      await new Promise((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            const newItem = JSON.parse(xhr.responseText);
-            setSelectedFolder(prev => prev ? ({ ...prev, mediaItems: [...prev.mediaItems, newItem] }) : null);
-            resolve(newItem);
-          } else reject();
-        };
-        xhr.onerror = reject;
-        xhr.send(formData);
-      });
-
-      setShowMediaModal(false);
-      showAlert("Media berhasil diupload!", "success");
-    } catch {
-      showAlert("Gagal upload media.");
-    } finally {
-      setIsSaving(false);
-      setUploadProgress(0);
-      setProcessingStatus('');
     }
+
+    setIsSaving(false);
+    setUploadProgress(0);
+    setProcessingStatus('');
+    setShowMediaModal(false);
+    showAlert("Semua proses upload selesai!", "success");
   };
 
   const handleDeleteFolder = () => {
@@ -216,7 +235,10 @@ export default function UploadMovie() {
         isOpen={showMediaModal} 
         isSaving={isSaving} 
         uploadProgress={uploadProgress} 
-        processingStatus={processingStatus} 
+        processingStatus={processingStatus}
+        // Props baru untuk Multi Upload
+        currentFileIndex={currentFileIndex}
+        totalFilesToUpload={totalFilesToUpload}
         onClose={() => setShowMediaModal(false)} 
         onSubmit={handleUploadMedia} 
       />
