@@ -54,8 +54,16 @@ export default function UserDashboard() {
 
   useEffect(() => {
     const authStatus = localStorage.getItem('is_logged_in');
+    const userRole = localStorage.getItem('user_role');
+
     if (authStatus !== 'true') {
       router.replace('/login');
+      return;
+    }
+
+    // Block admins from accessing member dashboard
+    if (userRole === 'ADMIN') {
+      router.replace('/admin');
       return;
     }
 
@@ -112,9 +120,11 @@ export default function UserDashboard() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem('is_logged_in');
     localStorage.removeItem('user_role');
+    localStorage.removeItem('username');
+    await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
   };
 

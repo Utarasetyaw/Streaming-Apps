@@ -49,13 +49,31 @@ export async function POST(request: Request) {
     }
 
     // 5. Login Sukses -> Kembalikan Data Role
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: 'Login Berhasil',
       user: {
         username: user.username,
         role: user.role, // "ADMIN" atau "USER"
       },
     });
+
+    // Set HTTP-only cookie for server-side middleware protection
+    response.cookies.set('user_role', user.role, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+    });
+    response.cookies.set('is_logged_in', 'true', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+    });
+
+    return response;
 
   } catch (error) {
     console.error('Login Error:', error);

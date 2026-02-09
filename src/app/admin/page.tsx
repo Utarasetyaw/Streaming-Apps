@@ -26,10 +26,11 @@ export default function AdminDashboard() {
     }
   }, [router]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem('user_role');
     localStorage.removeItem('is_logged_in');
     localStorage.removeItem('username');
+    await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
   };
 
