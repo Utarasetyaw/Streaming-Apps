@@ -1,25 +1,23 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { mkdir, unlink } from 'fs/promises';
-import { createWriteStream, existsSync, statSync } from 'fs'; // Tambah statSync
+import { createWriteStream, existsSync, statSync } from 'fs';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import path from 'path';
 import sharp from 'sharp';
 
-// --- KONFIGURASI PENTING UNTUK FILE BESAR ---
-// 1. Izinkan proses berjalan sampai 5 menit (300 detik) agar upload 700MB tidak timeout
+/**
+ * KONFIGURASI SEGMENT (App Router Standard)
+ * 1. maxDuration: Izinkan proses berjalan hingga 300 detik (untuk upload file besar).
+ * 2. dynamic: Memastikan API selalu dieksekusi secara dinamis (tidak di-cache).
+ */
 export const maxDuration = 300; 
-
-// 2. Matikan body parser bawaan (opsional di App Router, tapi bagus untuk penegas)
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Di App Router, request.formData() sudah mendukung streaming secara internal.
     const formData = await request.formData();
     const name = formData.get('name') as string;
     const type = formData.get('type') as string;
@@ -35,7 +33,7 @@ export async function POST(request: Request) {
     });
 
     if (!album || !album.thumbnailUrl) {
-      return NextResponse.json({ error: "Album tidak ditemukan" }, { status: 404 });
+      return NextResponse.json({ error: "Album tidak ditemukan atau tidak memiliki thumbnail" }, { status: 404 });
     }
 
     // Setup Folder
@@ -53,25 +51,24 @@ export async function POST(request: Request) {
       const finalFilePath = path.join(uploadDir, fileName);
       const relativePath = `/${cleanRelative}/${fileName}`;
 
-      // 1. STREAMING WRITE (Agar RAM server aman)
+      // STREAMING WRITE (Sangat penting untuk file > 100MB agar tidak crash)
       const fileStream = file.stream();
+      
+      // Mengonversi Web Stream ke Node Readable Stream agar bisa di-pipeline
       // @ts-ignore
       await pipeline(Readable.fromWeb(fileStream), createWriteStream(finalFilePath));
 
-      // 2. VALIDASI UKURAN FILE SETELAH UPLOAD
-      // Kita cek apakah file benar-benar tertulis di disk
+      // Validasi file setelah upload selesai
       if (existsSync(finalFilePath)) {
          const stats = statSync(finalFilePath);
-         // Jika file 0 bytes, berarti gagal total
          if (stats.size === 0) {
-            throw new Error("File terupload tapi ukuran 0 bytes (Gagal Tulis).");
+            throw new Error("File terupload tapi ukuran 0 bytes.");
          }
-         console.log(`✅ Sukses Upload Video: ${fileName} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+         console.log(`✅ Sukses Upload Video: ${fileName} (${(stats.size / (1024 * 1024)).toFixed(2)} MB)`);
       } else {
-         throw new Error("File tidak ditemukan setelah proses upload.");
+         throw new Error("File tidak ditemukan setelah proses streaming selesai.");
       }
 
-      // 3. Simpan ke Database
       const newItem = await prisma.mediaItem.create({
         data: {
           name: name,
@@ -85,7 +82,7 @@ export async function POST(request: Request) {
     } 
     
     // ==========================================
-    // LOGIKA FOTO
+    // LOGIKA FOTO (Konversi ke WebP)
     // ==========================================
     else {
       const fileName = `img_${Date.now()}.webp`;
@@ -111,13 +108,15 @@ export async function POST(request: Request) {
       return NextResponse.json(newItem);
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Upload Error:", error);
-    return NextResponse.json({ error: 'Gagal upload media (Cek koneksi/timeout)' }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || 'Gagal upload media' }, 
+      { status: 500 }
+    );
   }
 }
 
-// ... (DELETE function tetap sama) ...
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -129,8 +128,9 @@ export async function DELETE(request: Request) {
       where: { id: Number(id) },
     });
 
-    if (!item) return NextResponse.json({ error: 'File tidak ditemukan' }, { status: 404 });
+    if (!item) return NextResponse.json({ error: 'File tidak ditemukan di database' }, { status: 404 });
 
+    // Hapus file fisik dari folder public
     try {
       const rawUrl = item.url.startsWith('/') ? item.url.slice(1) : item.url;
       const decodedUrl = decodeURIComponent(rawUrl);
@@ -141,13 +141,14 @@ export async function DELETE(request: Request) {
       }
     } catch (error) {
       console.error("Gagal hapus file fisik:", error);
+      // Lanjutkan hapus record DB meskipun file fisik gagal dihapus
     }
 
     await prisma.mediaItem.delete({ where: { id: Number(id) } });
 
-    return NextResponse.json({ message: 'File berhasil dihapus' });
+    return NextResponse.json({ message: 'File dan record berhasil dihapus' });
   } catch (error) {
     console.error("Delete Error:", error);
-    return NextResponse.json({ error: 'Gagal menghapus file' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal menghapus media' }, { status: 500 });
   }
 }

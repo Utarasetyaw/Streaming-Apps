@@ -2,9 +2,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Tambahkan useEffect
 import { useRouter } from 'next/navigation';
-import { ArrowLeftIcon } from '@heroicons/react/24/solid'; // Pastikan install heroicons
+import { ArrowLeftIcon } from '@heroicons/react/24/solid';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,6 +13,31 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // State baru untuk mencegah form "berkedip" sebelum redirect
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  // 1. Cek status login saat halaman dibuka
+  useEffect(() => {
+    const checkSession = () => {
+      const isLoggedIn = localStorage.getItem('is_logged_in');
+      const userRole = localStorage.getItem('user_role');
+
+      if (isLoggedIn === 'true' && userRole) {
+        // Jika sudah login, redirect sesuai role
+        if (userRole === 'ADMIN') {
+          router.replace('/admin'); // Gunakan replace agar user tidak bisa klik 'Back' ke login
+        } else {
+          router.replace('/dashboard');
+        }
+      } else {
+        // Jika belum login, tampilkan form
+        setIsCheckingAuth(false);
+      }
+    };
+
+    checkSession();
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,10 +57,12 @@ export default function LoginPage() {
         throw new Error(data.message || 'Login gagal');
       }
 
+      // Simpan sesi
       localStorage.setItem('is_logged_in', 'true');
       localStorage.setItem('user_role', data.user.role);
       localStorage.setItem('username', data.user.username);
 
+      // Redirect
       if (data.user.role === 'ADMIN') {
         router.push('/admin');
       } else {
@@ -44,15 +71,26 @@ export default function LoginPage() {
 
     } catch (err: any) {
       setError(err.message);
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Stop loading jika error
     }
+    // Note: Jika sukses, biarkan loading true sampai halaman berpindah agar UX lebih mulus
   };
+
+  // 2. Tampilkan Loading screen kosong/spinner saat sedang mengecek auth
+  // Ini mencegah user melihat form login sekilas padahal sudah login
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#060606]">
+        {/* Spinner sederhana */}
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#060606] px-4 py-12 sm:px-6 lg:px-8 relative overflow-hidden">
       
-      {/* Background Effect (Opsional: agar tidak terlalu polos) */}
+      {/* Background Effect */}
       <div className="absolute inset-0 z-0">
          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-red-900/10 rounded-full blur-[120px]" />
          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/10 rounded-full blur-[120px]" />
@@ -111,7 +149,6 @@ export default function LoginPage() {
           </div>
 
           <div className="flex flex-col gap-4">
-            {/* Tombol Login */}
             <button
               type="submit"
               disabled={isLoading}
@@ -127,7 +164,6 @@ export default function LoginPage() {
               )}
             </button>
 
-            {/* Tombol Kembali ke Home (Secondary Button) */}
             <Link 
               href="/"
               className="group flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-transparent px-4 py-3 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white focus:outline-none"
@@ -138,7 +174,6 @@ export default function LoginPage() {
           </div>
         </form>
 
-        {/* Footer Link */}
         <div className="text-center text-xs text-zinc-500">
           Belum punya akun?{' '}
           <Link href="https://t.me/Jocc16" target="_blank" className="font-medium text-red-500 hover:text-red-400 transition-colors">
